@@ -9,7 +9,7 @@ local Camera = workspace.CurrentCamera
 
 -- Configurações da Mecânica
 local Ativado = false
-local RaioFOV = 300      -- Área de ativação ao redor do centro da tela
+local RaioFOV = 150      -- Tamanho do raio do círculo
 local Suavidade = 0.15   -- Tempo para a mira chegar ao alvo (em segundos)
 local CorMarcacao = Color3.fromRGB(255, 0, 0) -- Vermelho
 
@@ -21,12 +21,13 @@ local ConexaoRender = nil
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "PainelAuxiliarUI"
 ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true -- ISSO AQUI CORRIGE O DESALINHAMENTO DO MOUSE!
 ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
--- Frame Principal (Janelinha)
+-- Janelinha do Menu
 local MainFrame = Instance.new("Frame")
 MainFrame.Size = UDim2.new(0, 220, 0, 100)
-MainFrame.Position = UDim2.new(0.5, -110, 0.75, 0) -- Centro inferior da tela
+MainFrame.Position = UDim2.new(0.05, 0, 0.75, 0)
 MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 MainFrame.BorderSizePixel = 0
 MainFrame.Parent = ScreenGui
@@ -35,17 +36,15 @@ local CornerFrame = Instance.new("UICorner")
 CornerFrame.CornerRadius = UDim.new(0, 8)
 CornerFrame.Parent = MainFrame
 
--- Título da Janela
 local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Size = UDim2.new(1, 0, 0, 30)
 TitleLabel.BackgroundTransparency = 1
-TitleLabel.Text = "SISTEMA DE MIRA"
+TitleLabel.Text = "SISTEMA DE MIRA [ALT]"
 TitleLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
 TitleLabel.Font = Enum.Font.SourceSansBold
 TitleLabel.TextSize = 14
 TitleLabel.Parent = MainFrame
 
--- Botão de Alternar (Ativar/Desativar)
 local ToggleButton = Instance.new("TextButton")
 ToggleButton.Size = UDim2.new(0, 180, 0, 40)
 ToggleButton.Position = UDim2.new(0.5, -90, 0.5, -10)
@@ -60,9 +59,25 @@ local CornerButton = Instance.new("UICorner")
 CornerButton.CornerRadius = UDim.new(0, 6)
 CornerButton.Parent = ToggleButton
 
--- --- LÓGICA DE GERENCIAMENTO VISUAL ---
+-- --- CRIAÇÃO DA BOLINHA DO MOUSE (CÍRCULO FOV) ---
+local FOVCircle = Instance.new("Frame")
+FOVCircle.Size = UDim2.new(0, RaioFOV * 2, 0, RaioFOV * 2)
+FOVCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+FOVCircle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+FOVCircle.BackgroundTransparency = 0.98 -- Mais invisível por dentro
+FOVCircle.Visible = false
+FOVCircle.Parent = ScreenGui
 
--- Função para aplicar a marcação vermelha
+local CornerCircle = Instance.new("UICorner")
+CornerCircle.CornerRadius = UDim.new(1, 0)
+CornerCircle.Parent = FOVCircle
+
+local StrokeCircle = Instance.new("UIStroke")
+StrokeCircle.Color = Color3.fromRGB(255, 0, 0)
+StrokeCircle.Thickness = 1.5
+StrokeCircle.Parent = FOVCircle
+
+-- --- LÓGICA VISUAL DE MARCAÇÃO ---
 local function AplicarDestaque(personagem)
 	if not personagem:FindFirstChild("MarcacaoInimigo") then
 		local highlight = Instance.new("Highlight")
@@ -75,32 +90,40 @@ local function AplicarDestaque(personagem)
 	end
 end
 
--- Função para remover a marcação vermelha
 local function RemoverDestaque(personagem)
 	if personagem then
 		local highlight = personagem:FindFirstChild("MarcacaoInimigo")
-		if highlight then
-			highlight:Destroy()
-		end
+		if highlight then highlight:Destroy() end
 	end
 end
 
--- Limpa os efeitos visuais de todos os jogadores ativos
 local function LimparTodosOsDestaques()
 	for _, p in pairs(Players:GetPlayers()) do
-		if p.Character then
-			RemoverDestaque(p.Character)
-		end
+		if p.Character then RemoverDestaque(p.Character) end
 	end
 end
 
--- --- LÓGICA DE SELEÇÃO E MIRA ---
+-- --- LÓGICA ALTERNAR ESTADO (ON / OFF) ---
+local function AlternarEstado()
+	Ativado = not Ativado
+	
+	if Ativado then
+		ToggleButton.Text = "STATUS: ATIVADO"
+		ToggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+		FOVCircle.Visible = true
+	else
+		ToggleButton.Text = "STATUS: DESATIVADO"
+		ToggleButton.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
+		FOVCircle.Visible = false
+		LimparTodosOsDestaques()
+	end
+end
 
--- Função para encontrar o personagem mais próximo do centro da tela
-local function ObterAlvoMaisProximo()
+-- --- LÓGICA DE SELEÇÃO BASEADA NA POSIÇÃO DO MOUSE ---
+local function ObterAlvoMaisProximoDoMouse()
 	local melhorAlvo = nil
 	local menorDistancia = RaioFOV
-	local centroTela = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+	local posicaoMouse = UserInputService:GetMouseLocation()
 
 	for _, p in pairs(Players:GetPlayers()) do
 		if p ~= LocalPlayer and p.Character then
@@ -111,14 +134,13 @@ local function ObterAlvoMaisProximo()
 				local posTela, naTela = Camera:WorldToViewportPoint(head.Position)
 				
 				if naTela then
-					local distancia = (Vector2.new(posTela.X, posTela.Y) - centroTela).Magnitude
+					local distancia = (Vector2.new(posTela.X, posTela.Y) - posicaoMouse).Magnitude
 					if distancia < menorDistancia then
 						menorDistancia = distancia
 						melhorAlvo = head
 					end
 				end
 				
-				-- Mantém o personagem destacado enquanto o sistema procura alvos
 				AplicarDestaque(p.Character)
 			end
 		end
@@ -126,38 +148,30 @@ local function ObterAlvoMaisProximo()
 	return melhorAlvo
 end
 
--- Função executada a cada quadro (Frame) para atualizar a câmera
-local function ExecutarFocoMira()
-	local alvo = ObterAlvoMaisProximo()
-	if alvo then
-		-- Calcula a rotação necessária para olhar para a cabeça do alvo
-		local novaRotacao = CFrame.lookAt(Camera.CFrame.Position, alvo.Position)
-		-- Suaviza a transição usando Lerp
-		Camera.CFrame = Camera.CFrame:Lerp(novaRotacao, Suavidade)
+-- --- LOOP QUADRO A QUADRO ---
+local function ExecutarCiclo()
+	-- Atualiza a posição da bolinha perfeitamente usando a escala de pixels do mouse
+	local posicaoMouse = UserInputService:GetMouseLocation()
+	FOVCircle.Position = UDim2.fromOffset(posicaoMouse.X, posicaoMouse.Y)
+	
+	if Ativado then
+		local alvo = ObterAlvoMaisProximoDoMouse()
+		if alvo then
+			local novaRotacao = CFrame.lookAt(Camera.CFrame.Position, alvo.Position)
+			Camera.CFrame = Camera.CFrame:Lerp(novaRotacao, Suavidade)
+		end
 	end
 end
 
--- --- INTERAÇÃO DO BOTÃO ---
+-- --- ATIVAÇÃO POR CLIQUE OU POR TECLADO ---
+ToggleButton.MouseButton1Click:Connect(AlternarEstado)
 
-ToggleButton.MouseButton1Click:Connect(function()
-	Ativado = not Ativado
-	
-	if Ativado then
-		ToggleButton.Text = "STATUS: ATIVADO"
-		ToggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50) -- Fundo Vermelho
-		
-		-- Inicia o monitoramento de quadros
-		ConexaoRender = RunService.RenderStepped:Connect(ExecutarFocoMira)
-	else
-		ToggleButton.Text = "STATUS: DESATIVADO"
-		ToggleButton.BackgroundColor3 = Color3.fromRGB(50, 50, 55)   -- Fundo Padrão
-		
-		-- Desconecta o monitoramento para liberar processamento
-		if ConexaoRender then
-			ConexaoRender:Disconnect()
-			ConexaoRender = nil
-		end
-		
-		LimparTodosOsDestaques()
+UserInputService.InputBegan:Connect(function(input, processado)
+	if processado then return end 
+	if input.KeyCode == Enum.KeyCode.LeftAlt then
+		AlternarEstado()
 	end
 end)
+
+-- Inicia o loop do frame
+ConexaoRender = RunService.RenderStepped:Connect(ExecutarCiclo)
