@@ -9,19 +9,21 @@ local Camera = workspace.CurrentCamera
 
 -- Configurações da Mecânica
 local Ativado = false
-local RaioFOV = 150      -- Tamanho do raio do círculo
-local Suavidade = 0.15   -- Tempo para a mira chegar ao alvo (em segundos)
-local CorMarcacao = Color3.fromRGB(255, 0, 0) -- Vermelho
+local RaioFOV = 150      
+local Suavidade = 0.05   
+local CorMarcacao = Color3.fromRGB(255, 0, 0) 
+
+-- NOVO: Sensibilidade para desgrudar (Quanto MENOR o número, mais FÁCIL fica para desgrudar)
+local ForcaParaDesgrudar = 7 
 
 -- Variáveis de controle
-local AlvoAtual = nil
 local ConexaoRender = nil
 
 -- --- CRIAÇÃO DA INTERFACE VISUAL (GUI) ---
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "PainelAuxiliarUI"
 ScreenGui.ResetOnSpawn = false
-ScreenGui.IgnoreGuiInset = true -- ISSO AQUI CORRIGE O DESALINHAMENTO DO MOUSE!
+ScreenGui.IgnoreGuiInset = true 
 ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
 -- Janelinha do Menu
@@ -64,7 +66,7 @@ local FOVCircle = Instance.new("Frame")
 FOVCircle.Size = UDim2.new(0, RaioFOV * 2, 0, RaioFOV * 2)
 FOVCircle.AnchorPoint = Vector2.new(0.5, 0.5)
 FOVCircle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-FOVCircle.BackgroundTransparency = 0.98 -- Mais invisível por dentro
+FOVCircle.BackgroundTransparency = 0.98 
 FOVCircle.Visible = false
 FOVCircle.Parent = ScreenGui
 
@@ -93,13 +95,17 @@ end
 local function RemoverDestaque(personagem)
 	if personagem then
 		local highlight = personagem:FindFirstChild("MarcacaoInimigo")
-		if highlight then highlight:Destroy() end
+		if highlight then 
+			highlight:Destroy() 
+		end
 	end
 end
 
 local function LimparTodosOsDestaques()
 	for _, p in pairs(Players:GetPlayers()) do
-		if p.Character then RemoverDestaque(p.Character) end
+		if p.Character then 
+			RemoverDestaque(p.Character) 
+		end
 	end
 end
 
@@ -119,11 +125,15 @@ local function AlternarEstado()
 	end
 end
 
--- --- LÓGICA DE SELEÇÃO BASEADA NA POSIÇÃO DO MOUSE ---
-local function ObterAlvoMaisProximoDoMouse()
+-- --- LÓGICA DE SELEÇÃO E CONTROLE DE FORÇA ---
+local function ProcessarJogadoresEMira()
 	local melhorAlvo = nil
 	local menorDistancia = RaioFOV
 	local posicaoMouse = UserInputService:GetMouseLocation()
+
+	-- Mede o quanto você mexeu o mouse manualmente neste frame
+	local movimentoMouse = UserInputService:GetMouseDelta()
+	local forcaDaMao = movimentoMouse.Magnitude
 
 	for _, p in pairs(Players:GetPlayers()) do
 		if p ~= LocalPlayer and p.Character then
@@ -142,36 +152,46 @@ local function ObterAlvoMaisProximoDoMouse()
 				end
 				
 				AplicarDestaque(p.Character)
+			else
+				RemoverDestaque(p.Character)
 			end
 		end
 	end
-	return melhorAlvo
-end
-
--- --- LOOP QUADRO A QUADRO ---
-local function ExecutarCiclo()
-	-- Atualiza a posição da bolinha perfeitamente usando a escala de pixels do mouse
-	local posicaoMouse = UserInputService:GetMouseLocation()
-	FOVCircle.Position = UDim2.fromOffset(posicaoMouse.X, posicaoMouse.Y)
 	
-	if Ativado then
-		local alvo = ObterAlvoMaisProximoDoMouse()
-		if alvo then
-			local novaRotacao = CFrame.lookAt(Camera.CFrame.Position, alvo.Position)
+	-- Se o aimbot estiver ligado e houver um alvo...
+	if Ativado and melhorAlvo then
+		-- DETECÇÃO DE FORÇA CONTRÁRIA: Se você mexer o mouse rápido o suficiente, ele solta
+		if forcaDaMao > ForcaParaDesgrudar then
+			melhorAlvo = nil -- Cancela a mira para este frame
+		else
+			local novaRotacao = CFrame.lookAt(Camera.CFrame.Position, melhorAlvo.Position)
 			Camera.CFrame = Camera.CFrame:Lerp(novaRotacao, Suavidade)
 		end
 	end
 end
 
+-- --- LOOP QUADRO A QUADRO ---
+local function ExecutarCiclo()
+	local posicaoMouse = UserInputService:GetMouseLocation()
+	FOVCircle.Position = UDim2.fromOffset(posicaoMouse.X, posicaoMouse.Y)
+	
+	ProcessarJogadoresEMira()
+end
+
 -- --- ATIVAÇÃO POR CLIQUE OU POR TECLADO ---
-ToggleButton.MouseButton1Click:Connect(AlternarEstado)
+ToggleButton.MouseButton1Click:Connect(function()
+	AlternarEstado()
+end)
 
 UserInputService.InputBegan:Connect(function(input, processado)
-	if processado then return end 
+	if processado then 
+		return 
+	end 
+	
 	if input.KeyCode == Enum.KeyCode.LeftAlt then
 		AlternarEstado()
 	end
 end)
 
--- Inicia o loop do frame
+-- Inicia o loop principal
 ConexaoRender = RunService.RenderStepped:Connect(ExecutarCiclo)
