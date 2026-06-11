@@ -1,38 +1,56 @@
 -- Serviços do Roblox
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
 -- Configurações da Mecânica
-local Ativado = false
-local RaioFOV = 150      
-local Suavidade = 0.05   
-local CorMarcacao = Color3.fromRGB(255, 0, 0) 
+local AimbotAtivado = false
+local MarcacaoAtivada = true -- Opção de ativar/desativar a marcação vermelha
+local MenuAberto = false
 
--- NOVO: Sensibilidade para desgrudar (Quanto MENOR o número, mais FÁCIL fica para desgrudar)
-local ForcaParaDesgrudar = 7 
+local RaioFOV = 150      
+local Suavidade = 0.04   -- Mira bem suave
+local ForcaParaDesgrudar = 6 -- Forcinha para o lado para desgrudar do cara
+local CorMarcacao = Color3.fromRGB(255, 0, 0) 
 
 -- Variáveis de controle
 local ConexaoRender = nil
 
--- --- CRIAÇÃO DA INTERFACE VISUAL (GUI) ---
+-- --- 1. CRIAÇÃO DA INTERFACE VISUAL (GUI) ---
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "PainelAuxiliarUI"
+ScreenGui.Name = "PainelHabilidadesUI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.IgnoreGuiInset = true 
 ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
--- Janelinha do Menu
+-- Quadradinho Principal (Botão de abrir/fechar o Menu)
+local MenuIcon = Instance.new("TextButton")
+MenuIcon.Size = UDim2.new(0, 40, 0, 40)
+MenuIcon.Position = UDim2.new(0.02, 0, 0.7, 0)
+MenuIcon.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+MenuIcon.Text = "⚙️"
+MenuIcon.TextColor3 = Color3.fromRGB(255, 255, 255)
+MenuIcon.TextSize = 20
+MenuIcon.Font = Enum.Font.SourceSansBold
+MenuIcon.Active = true
+MenuIcon.Draggable = true -- Você pode arrastar o quadradinho para onde quiser
+MenuIcon.Parent = ScreenGui
+
+local CornerIcon = Instance.new("UICorner")
+CornerIcon.CornerRadius = UDim.new(0, 8)
+CornerIcon.Parent = MenuIcon
+
+-- Janelinha do Menu Principal (Começa invisível/fechada)
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 220, 0, 100)
-MainFrame.Position = UDim2.new(0.05, 0, 0.75, 0)
+MainFrame.Size = UDim2.new(0, 220, 0, 150)
+MainFrame.Position = UDim2.new(0, 50, 0, -50) -- Fica colada ao lado do quadradinho
 MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 MainFrame.BorderSizePixel = 0
-MainFrame.Parent = ScreenGui
+MainFrame.Visible = false
+MainFrame.Parent = MenuIcon
 
 local CornerFrame = Instance.new("UICorner")
 CornerFrame.CornerRadius = UDim.new(0, 8)
@@ -41,27 +59,43 @@ CornerFrame.Parent = MainFrame
 local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Size = UDim2.new(1, 0, 0, 30)
 TitleLabel.BackgroundTransparency = 1
-TitleLabel.Text = "SISTEMA DE MIRA [ALT]"
+TitleLabel.Text = "SISTEMA TÁTICO [ALT]"
 TitleLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
 TitleLabel.Font = Enum.Font.SourceSansBold
 TitleLabel.TextSize = 14
 TitleLabel.Parent = MainFrame
 
-local ToggleButton = Instance.new("TextButton")
-ToggleButton.Size = UDim2.new(0, 180, 0, 40)
-ToggleButton.Position = UDim2.new(0.5, -90, 0.5, -10)
-ToggleButton.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
-ToggleButton.Text = "STATUS: DESATIVADO"
-ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-ToggleButton.Font = Enum.Font.SourceSansBold
-ToggleButton.TextSize = 16
-ToggleButton.Parent = MainFrame
+-- Botão de Ativar/Desativar Aimbot
+local ToggleAimbotButton = Instance.new("TextButton")
+ToggleAimbotButton.Size = UDim2.new(0, 190, 0, 35)
+ToggleAimbotButton.Position = UDim2.new(0.5, -95, 0, 40)
+ToggleAimbotButton.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
+ToggleAimbotButton.Text = "AIMBOT: DESATIVADO"
+ToggleAimbotButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleAimbotButton.Font = Enum.Font.SourceSansBold
+ToggleAimbotButton.TextSize = 14
+ToggleAimbotButton.Parent = MainFrame
 
-local CornerButton = Instance.new("UICorner")
-CornerButton.CornerRadius = UDim.new(0, 6)
-CornerButton.Parent = ToggleButton
+local CornerBtn1 = Instance.new("UICorner")
+CornerBtn1.CornerRadius = UDim.new(0, 6)
+CornerBtn1.Parent = ToggleAimbotButton
 
--- --- CRIAÇÃO DA BOLINHA DO MOUSE (CÍRCULO FOV) ---
+-- Botão de Ativar/Desativar Marcação Vermelha (ESP)
+local ToggleEspButton = Instance.new("TextButton")
+ToggleEspButton.Size = UDim2.new(0, 190, 0, 35)
+ToggleEspButton.Position = UDim2.new(0.5, -95, 0, 90)
+ToggleEspButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50) -- Começa ativado (Vermelho)
+ToggleEspButton.Text = "MARCAÇÃO: ATIVADA"
+ToggleEspButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleEspButton.Font = Enum.Font.SourceSansBold
+ToggleEspButton.TextSize = 14
+ToggleEspButton.Parent = MainFrame
+
+local CornerBtn2 = Instance.new("UICorner")
+CornerBtn2.CornerRadius = UDim.new(0, 6)
+CornerBtn2.Parent = ToggleEspButton
+
+-- --- 2. CRIAÇÃO DA BOLINHA DO MOUSE (CÍRCULO FOV) ---
 local FOVCircle = Instance.new("Frame")
 FOVCircle.Size = UDim2.new(0, RaioFOV * 2, 0, RaioFOV * 2)
 FOVCircle.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -79,16 +113,22 @@ StrokeCircle.Color = Color3.fromRGB(255, 0, 0)
 StrokeCircle.Thickness = 1.5
 StrokeCircle.Parent = FOVCircle
 
--- --- LÓGICA VISUAL DE MARCAÇÃO ---
+-- --- 3. LÓGICA VISUAL DE MARCAÇÃO ---
 local function AplicarDestaque(personagem)
-	if not personagem:FindFirstChild("MarcacaoInimigo") then
-		local highlight = Instance.new("Highlight")
-		highlight.Name = "MarcacaoInimigo"
-		highlight.FillColor = CorMarcacao
-		highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-		highlight.FillTransparency = 0.5
-		highlight.Adornee = personagem
-		highlight.Parent = personagem
+	if MarcacaoAtivada then
+		if not personagem:FindFirstChild("MarcacaoInimigo") then
+			local highlight = Instance.new("Highlight")
+			highlight.Name = "MarcacaoInimigo"
+			highlight.FillColor = CorMarcacao
+			highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+			highlight.FillTransparency = 0.5
+			highlight.Parent = personagem
+		end
+	else
+		local highlight = personagem:FindFirstChild("MarcacaoInimigo")
+		if highlight then 
+			highlight:Destroy() 
+		end
 	end
 end
 
@@ -109,29 +149,41 @@ local function LimparTodosOsDestaques()
 	end
 end
 
--- --- LÓGICA ALTERNAR ESTADO (ON / OFF) ---
-local function AlternarEstado()
-	Ativado = not Ativado
+-- --- 4. ALTERNAR FUNÇÕES (ON / OFF) ---
+local function AlternarAimbot()
+	AimbotAtivado = not AimbotAtivado
 	
-	if Ativado then
-		ToggleButton.Text = "STATUS: ATIVADO"
-		ToggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+	if AimbotAtivado then
+		ToggleAimbotButton.Text = "AIMBOT: ATIVADO"
+		ToggleAimbotButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
 		FOVCircle.Visible = true
 	else
-		ToggleButton.Text = "STATUS: DESATIVADO"
-		ToggleButton.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
+		ToggleAimbotButton.Text = "AIMBOT: DESATIVADO"
+		ToggleAimbotButton.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
 		FOVCircle.Visible = false
+	end
+end
+
+local function AlternarMarcacao()
+	MarcacaoAtivada = not MarcacaoAtivada
+	
+	if MarcacaoAtivada then
+		ToggleEspButton.Text = "MARCAÇÃO: ATIVADA"
+		ToggleEspButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+	else
+		ToggleEspButton.Text = "MARCAÇÃO: DESATIVADA"
+		ToggleEspButton.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
 		LimparTodosOsDestaques()
 	end
 end
 
--- --- LÓGICA DE SELEÇÃO E CONTROLE DE FORÇA ---
-local function ProcessarJogadoresEMira()
+-- --- 5. LÓGICA DE SELEÇÃO E CONTROLE DE SUAVIDADE/FORÇA ---
+local function ProcessarMecanicas()
 	local melhorAlvo = nil
 	local menorDistancia = RaioFOV
 	local posicaoMouse = UserInputService:GetMouseLocation()
 
-	-- Mede o quanto você mexeu o mouse manualmente neste frame
+	-- Mede o movimento físico da sua mão
 	local movimentoMouse = UserInputService:GetMouseDelta()
 	local forcaDaMao = movimentoMouse.Magnitude
 
@@ -151,6 +203,7 @@ local function ProcessarJogadoresEMira()
 					end
 				end
 				
+				-- Atualiza os bonecos vermelhos se a opção estiver ligada
 				AplicarDestaque(p.Character)
 			else
 				RemoverDestaque(p.Character)
@@ -158,40 +211,51 @@ local function ProcessarJogadoresEMira()
 		end
 	end
 	
-	-- Se o aimbot estiver ligado e houver um alvo...
-	if Ativado and melhorAlvo then
-		-- DETECÇÃO DE FORÇA CONTRÁRIA: Se você mexer o mouse rápido o suficiente, ele solta
+	-- Se o aimbot estiver ligado e achar alguém no círculo
+	if AimbotAtivado and melhorAlvo then
+		-- DESGRUDAR: Se você empurrar o mouse com uma forcinha pro lado, ele limpa a mira
 		if forcaDaMao > ForcaParaDesgrudar then
-			melhorAlvo = nil -- Cancela a mira para este frame
+			melhorAlvo = nil 
 		else
+			-- Puxada de mira super suave baseada na variável Suavidade
 			local novaRotacao = CFrame.lookAt(Camera.CFrame.Position, melhorAlvo.Position)
 			Camera.CFrame = Camera.CFrame:Lerp(novaRotacao, Suavidade)
 		end
 	end
 end
 
--- --- LOOP QUADRO A QUADRO ---
-local function ExecutarCiclo()
+-- --- 6. EVENTOS E ENTRADAS ---
+
+-- Loop Principal (Frame por frame)
+ConexaoRender = RunService.RenderStepped:Connect(function()
 	local posicaoMouse = UserInputService:GetMouseLocation()
 	FOVCircle.Position = UDim2.fromOffset(posicaoMouse.X, posicaoMouse.Y)
 	
-	ProcessarJogadoresEMira()
-end
-
--- --- ATIVAÇÃO POR CLIQUE OU POR TECLADO ---
-ToggleButton.MouseButton1Click:Connect(function()
-	AlternarEstado()
+	ProcessarMecanicas()
 end)
 
+-- Botão de abrir/fechar o quadradinho
+MenuIcon.MouseButton1Click:Connect(function()
+	MenuAberto = not MenuAberto
+	MainFrame.Visible = MenuAberto
+end)
+
+-- Conecta as opções internas do painel
+ToggleAimbotButton.MouseButton1Click:Connect(function()
+	AlternarAimbot()
+end)
+
+ToggleEspButton.MouseButton1Click:Connect(function()
+	AlternarMarcacao()
+end)
+
+-- Atalho para ativar/desativar usando a tecla ALT
 UserInputService.InputBegan:Connect(function(input, processado)
 	if processado then 
 		return 
 	end 
 	
 	if input.KeyCode == Enum.KeyCode.LeftAlt then
-		AlternarEstado()
+		AlternarAimbot()
 	end
 end)
-
--- Inicia o loop principal
-ConexaoRender = RunService.RenderStepped:Connect(ExecutarCiclo)
