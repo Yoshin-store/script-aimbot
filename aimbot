@@ -1,0 +1,131 @@
+-- Coloque este código em um LocalScript dentro de StarterPlayerScripts
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+-- --- CONFIGURAÇÕES DO AUXÍLIO ---
+local RAIO_DETECCAO = 200 -- Distância máxima em pixels do centro da tela para puxar a mira
+local SUAVIDADE = 0.15    -- Tempo (em segundos) para a mira chegar no alvo (menor = mais rápido)
+local COR_DESTAQUE = Color3.fromRGB(255, 0, 0) -- Vermelho
+
+-- --- VARIÁVEIS DE CONTROLE ---
+local mirando = false
+local alvoAtual = nil
+local conexaoRender = nil
+
+-- --- FUNÇÃO PARA VERIFICAR A COMPRA (GAMEPASS / PRODUTO) ---
+-- IMPORTANTE: No futuro, valide isso via RemoteFunction perguntando ao servidor!
+local function jogadorPossuiAuxilio()
+	-- Substitua por sua lógica de Gamepass/Moedas se necessário
+	return true 
+end
+
+-- --- FUNÇÕES AUXILIARES DE MIRA E VISUAL ---
+local function aplicarDestaque(personagem)
+	if not personagem:FindFirstChild("HighlightMira") then
+		local highlight = Instance.new("Highlight")
+		highlight.Name = "HighlightMira"
+		highlight.FillColor = COR_DESTAQUE
+		highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+		highlight.FillTransparency = 0.5
+		highlight.Adornee = personagem
+		highlight.Parent = personagem
+	end
+end
+
+local function removerDestaque(personagem)
+	if personagem then
+		local highlight = personagem:FindFirstChild("HighlightMira")
+		if highlight then
+			highlight:Destroy()
+		end
+	end
+end
+
+-- Função que encontra o inimigo mais próximo do centro da tela
+local function obterAlvoMaisProximoDoCentro()
+	local melhorAlvo = nil
+	local menorDistanciaPixel = RAIO_DETECCAO
+	local centroTela = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+	for _, jogador em pairs(Players:GetPlayers()) do
+		if jogador ~= LocalPlayer and jogador.Character and jogador.Character:FindFirstChild("HumanoidRootPart") and jogador.Character:FindFirstChild("Humanoid") then
+			local char = jogador.Character
+			if char.Humanoid.Health > 0 then
+				-- Converte a posição 3D do personagem para a tela 2D do jogador
+				local posicaoTela, naTela = Camera:WorldToViewportPoint(char.HumanoidRootPart.Position)
+				
+				if naTela then
+					local distanciaPixel = (Vector2.new(posicaoTela.X, posicaoTela.Y) - centroTela).Magnitude
+					if distanciaPixel < menorDistanciaPixel then
+						menorDistanciaPixel = distanciaPixel
+						melhorAlvo = char
+					end
+				end
+			end
+		end
+	end
+	return melhorAlvo
+end
+
+-- --- LOOP DE ATUALIZAÇÃO DA MIRA ---
+local function aoAtualizarFrame()
+	if not mirando or not jogadorPossuiAuxilio() then 
+		if alvoAtual then
+			removerDestaque(alvoAtual)
+			alvoAtual = nil
+		end
+		return 
+	end
+
+	local novoAlvo = obterAlvoMaisProximoDoCentro()
+
+	-- Se o alvo mudou, limpa o destaque do antigo
+	if novoAlvo ~= alvoAtual then
+		removerDestaque(alvoAtual)
+		alvoAtual = novoAlvo
+	end
+
+	-- Se houver um alvo válido, gruda a mira e destaca
+	if alvoAtual and alvoAtual:FindFirstChild("HumanoidRootPart") then
+		aplicarDestaque(alvoAtual)
+		
+		-- Suaviza a rotação da câmera para olhar para o peito (HumanoidRootPart) do alvo
+		local direcaoAlvo = CFrame.new(Camera.CFrame.Position, alvoAtual.HumanoidRootPart.Position)
+		local infoTween = TweenInfo.new(SUAVIDADE, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+		
+		local tween = TweenService:Create(Camera, infoTween, {CFrame = direcaoAlvo})
+		tween:Play()
+	end
+end
+
+-- --- INPUTS (MOUSE) ---
+-- Ativa ao segurar o Botão Direito do Mouse (Mira padrão de jogos de tiro)
+UserInputService.InputBegan:Connect(function(input, processado)
+	if processado then return end
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then
+		mirando = true
+		-- Liga o loop de repetição frame a frame apenas quando estiver mirando
+		conexaoRender = RunService.RenderStepped:Connect(aoAtualizarFrame)
+	end
+end)
+
+-- Desativa ao soltar o Botão Direito
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then
+		mirando = false
+		if conexaoRender then
+			conexaoRender:Disconnect()
+			conexaoRender = nil
+		end
+		if alvoAtual then
+			removerDestaque(alvoAtual)
+			alvoAtual = nil
+		end
+	end
+end)
