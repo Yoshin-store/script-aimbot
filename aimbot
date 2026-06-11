@@ -1,131 +1,107 @@
--- Coloque este código em um LocalScript dentro de StarterPlayerScripts
+-- Vanguard Tactical System (Aimbot + Team Check + Highlight)
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
-local Camera = Workspace.CurrentCamera
+local Camera = workspace.CurrentCamera
+local Button = script.Parent -- O botão onde este script está dentro
 
--- --- CONFIGURAÇÕES DO AUXÍLIO ---
-local RAIO_DETECCAO = 200 -- Distância máxima em pixels do centro da tela para puxar a mira
-local SUAVIDADE = 0.15    -- Tempo (em segundos) para a mira chegar no alvo (menor = mais rápido)
-local COR_DESTAQUE = Color3.fromRGB(255, 0, 0) -- Vermelho
+-- CONFIGURAÇÕES
+local Ativado = false
+local RaioFOV = 250 -- Tamanho do círculo de detecção
+local Suavidade = 0.12 -- Quanto menor, mais rápido ele puxa a mira
+local CorInimigo = Color3.fromRGB(255, 0, 0) -- Vermelho
 
--- --- VARIÁVEIS DE CONTROLE ---
-local mirando = false
-local alvoAtual = nil
-local conexaoRender = nil
+local AlvoAtual = nil
 
--- --- FUNÇÃO PARA VERIFICAR A COMPRA (GAMEPASS / PRODUTO) ---
--- IMPORTANTE: No futuro, valide isso via RemoteFunction perguntando ao servidor!
-local function jogadorPossuiAuxilio()
-	-- Substitua por sua lógica de Gamepass/Moedas se necessário
-	return true 
-end
-
--- --- FUNÇÕES AUXILIARES DE MIRA E VISUAL ---
-local function aplicarDestaque(personagem)
-	if not personagem:FindFirstChild("HighlightMira") then
-		local highlight = Instance.new("Highlight")
-		highlight.Name = "HighlightMira"
-		highlight.FillColor = COR_DESTAQUE
-		highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-		highlight.FillTransparency = 0.5
-		highlight.Adornee = personagem
-		highlight.Parent = personagem
+-- FUNÇÃO PARA MUDAR O ESTADO DO BOTÃO
+local function AtualizarInterface()
+	if Ativado then
+		Button.Text = "AIMBOT: ATIVADO"
+		Button.BackgroundColor3 = Color3.fromRGB(255, 60, 60) -- Vermelho brilhante
+	else
+		Button.Text = "AIMBOT: DESATIVADO"
+		Button.BackgroundColor3 = Color3.fromRGB(40, 40, 45) -- Cinza escuro
 	end
 end
 
-local function removerDestaque(personagem)
-	if personagem then
-		local highlight = personagem:FindFirstChild("HighlightMira")
-		if highlight then
-			highlight:Destroy()
-		end
+-- CLIQUE DO BOTÃO
+Button.MouseButton1Click:Connect(function()
+	Ativado = not Ativado
+	AtualizarInterface()
+end)
+
+-- FUNÇÃO PARA MARCAR INIMIGO (HIGHLIGHT)
+local function AplicarHighlight(personagem)
+	if not personagem:FindFirstChild("VanguardHighlight") then
+		local h = Instance.new("Highlight")
+		h.Name = "VanguardHighlight"
+		h.FillColor = CorInimigo
+		h.OutlineColor = Color3.fromRGB(255, 255, 255)
+		h.FillTransparency = 0.4
+		h.Parent = personagem
 	end
 end
 
--- Função que encontra o inimigo mais próximo do centro da tela
-local function obterAlvoMaisProximoDoCentro()
+local function RemoverHighlight(personagem)
+	local h = personagem:FindFirstChild("VanguardHighlight")
+	if h then h:Destroy() end
+end
+
+-- ENCONTRAR INIMIGO MAIS PRÓXIMO DO CENTRO (CHECK DE TIME)
+local function ObterMelhorAlvo()
 	local melhorAlvo = nil
-	local menorDistanciaPixel = RAIO_DETECCAO
+	local menorDistancia = RaioFOV
 	local centroTela = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
 
-	for _, jogador em pairs(Players:GetPlayers()) do
-		if jogador ~= LocalPlayer and jogador.Character and jogador.Character:FindFirstChild("HumanoidRootPart") and jogador.Character:FindFirstChild("Humanoid") then
-			local char = jogador.Character
-			if char.Humanoid.Health > 0 then
-				-- Converte a posição 3D do personagem para a tela 2D do jogador
-				local posicaoTela, naTela = Camera:WorldToViewportPoint(char.HumanoidRootPart.Position)
+	for _, p in pairs(Players:GetPlayers()) do
+		-- Verifica se NÃO é do mesmo time e se o personagem existe
+		if p ~= LocalPlayer and p.Team ~= LocalPlayer.Team and p.Character then
+			local head = p.Character:FindFirstChild("Head")
+			local hum = p.Character:FindFirstChild("Humanoid")
+			
+			if head and hum and hum.Health > 0 then
+				local posTela, visivel = Camera:WorldToViewportPoint(head.Position)
 				
-				if naTela then
-					local distanciaPixel = (Vector2.new(posicaoTela.X, posicaoTela.Y) - centroTela).Magnitude
-					if distanciaPixel < menorDistanciaPixel then
-						menorDistanciaPixel = distanciaPixel
-						melhorAlvo = char
+				if visivel then
+					local dist = (Vector2.new(posTela.X, posTela.Y) - centroTela).Magnitude
+					if dist < menorDistancia then
+						menorDistancia = dist
+						melhorAlvo = p.Character
 					end
 				end
+				
+				-- Aplica o efeito vermelho visual
+				AplicarHighlight(p.Character)
 			end
+		elseif p.Character and p.Team == LocalPlayer.Team then
+			-- Se for do mesmo time, garante que não tem highlight
+			RemoverHighlight(p.Character)
 		end
 	end
 	return melhorAlvo
 end
 
--- --- LOOP DE ATUALIZAÇÃO DA MIRA ---
-local function aoAtualizarFrame()
-	if not mirando or not jogadorPossuiAuxilio() then 
-		if alvoAtual then
-			removerDestaque(alvoAtual)
-			alvoAtual = nil
+-- LOOP DE MIRA
+RunService.RenderStepped:Connect(function()
+	if Ativado then
+		AlvoAtual = ObterMelhorAlvo()
+		
+		if AlvoAtual and AlvoAtual:FindFirstChild("Head") then
+			-- Puxa a câmera suavemente para a cabeça (Head)
+			local headPos = AlvoAtual.Head.Position
+			local camCFrame = CFrame.new(Camera.CFrame.Position, headPos)
+			
+			Camera.CFrame = Camera.CFrame:Lerp(camCFrame, Suavidade)
 		end
-		return 
-	end
-
-	local novoAlvo = obterAlvoMaisProximoDoCentro()
-
-	-- Se o alvo mudou, limpa o destaque do antigo
-	if novoAlvo ~= alvoAtual then
-		removerDestaque(alvoAtual)
-		alvoAtual = novoAlvo
-	end
-
-	-- Se houver um alvo válido, gruda a mira e destaca
-	if alvoAtual and alvoAtual:FindFirstChild("HumanoidRootPart") then
-		aplicarDestaque(alvoAtual)
-		
-		-- Suaviza a rotação da câmera para olhar para o peito (HumanoidRootPart) do alvo
-		local direcaoAlvo = CFrame.new(Camera.CFrame.Position, alvoAtual.HumanoidRootPart.Position)
-		local infoTween = TweenInfo.new(SUAVIDADE, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-		
-		local tween = TweenService:Create(Camera, infoTween, {CFrame = direcaoAlvo})
-		tween:Play()
-	end
-end
-
--- --- INPUTS (MOUSE) ---
--- Ativa ao segurar o Botão Direito do Mouse (Mira padrão de jogos de tiro)
-UserInputService.InputBegan:Connect(function(input, processado)
-	if processado then return end
-	if input.UserInputType == Enum.UserInputType.MouseButton2 then
-		mirando = true
-		-- Liga o loop de repetição frame a frame apenas quando estiver mirando
-		conexaoRender = RunService.RenderStepped:Connect(aoAtualizarFrame)
+	else
+		-- Se desligar, limpa os highlights de todo mundo
+		for _, p in pairs(Players:GetPlayers()) do
+			if p.Character then RemoverHighlight(p.Character) end
+		end
 	end
 end)
 
--- Desativa ao soltar o Botão Direito
-UserInputService.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton2 then
-		mirando = false
-		if conexaoRender then
-			conexaoRender:Disconnect()
-			conexaoRender = nil
-		end
-		if alvoAtual then
-			removerDestaque(alvoAtual)
-			alvoAtual = nil
-		end
-	end
-end)
+AtualizarInterface() -- Inicializa a GUI
