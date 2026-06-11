@@ -1,107 +1,163 @@
--- Vanguard Tactical System (Aimbot + Team Check + Highlight)
+-- Serviços do Roblox
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
-local Button = script.Parent -- O botão onde este script está dentro
 
--- CONFIGURAÇÕES
+-- Configurações da Mecânica
 local Ativado = false
-local RaioFOV = 250 -- Tamanho do círculo de detecção
-local Suavidade = 0.12 -- Quanto menor, mais rápido ele puxa a mira
-local CorInimigo = Color3.fromRGB(255, 0, 0) -- Vermelho
+local RaioFOV = 300      -- Área de ativação ao redor do centro da tela
+local Suavidade = 0.15   -- Tempo para a mira chegar ao alvo (em segundos)
+local CorMarcacao = Color3.fromRGB(255, 0, 0) -- Vermelho
 
+-- Variáveis de controle
 local AlvoAtual = nil
+local ConexaoRender = nil
 
--- FUNÇÃO PARA MUDAR O ESTADO DO BOTÃO
-local function AtualizarInterface()
-	if Ativado then
-		Button.Text = "AIMBOT: ATIVADO"
-		Button.BackgroundColor3 = Color3.fromRGB(255, 60, 60) -- Vermelho brilhante
-	else
-		Button.Text = "AIMBOT: DESATIVADO"
-		Button.BackgroundColor3 = Color3.fromRGB(40, 40, 45) -- Cinza escuro
+-- --- CRIAÇÃO DA INTERFACE VISUAL (GUI) ---
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "PainelAuxiliarUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Frame Principal (Janelinha)
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 220, 0, 100)
+MainFrame.Position = UDim2.new(0.5, -110, 0.75, 0) -- Centro inferior da tela
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+MainFrame.BorderSizePixel = 0
+MainFrame.Parent = ScreenGui
+
+local CornerFrame = Instance.new("UICorner")
+CornerFrame.CornerRadius = UDim.new(0, 8)
+CornerFrame.Parent = MainFrame
+
+-- Título da Janela
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Size = UDim2.new(1, 0, 0, 30)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Text = "SISTEMA DE MIRA"
+TitleLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+TitleLabel.Font = Enum.Font.SourceSansBold
+TitleLabel.TextSize = 14
+TitleLabel.Parent = MainFrame
+
+-- Botão de Alternar (Ativar/Desativar)
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Size = UDim2.new(0, 180, 0, 40)
+ToggleButton.Position = UDim2.new(0.5, -90, 0.5, -10)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
+ToggleButton.Text = "STATUS: DESATIVADO"
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleButton.Font = Enum.Font.SourceSansBold
+ToggleButton.TextSize = 16
+ToggleButton.Parent = MainFrame
+
+local CornerButton = Instance.new("UICorner")
+CornerButton.CornerRadius = UDim.new(0, 6)
+CornerButton.Parent = ToggleButton
+
+-- --- LÓGICA DE GERENCIAMENTO VISUAL ---
+
+-- Função para aplicar a marcação vermelha
+local function AplicarDestaque(personagem)
+	if not personagem:FindFirstChild("MarcacaoInimigo") then
+		local highlight = Instance.new("Highlight")
+		highlight.Name = "MarcacaoInimigo"
+		highlight.FillColor = CorMarcacao
+		highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+		highlight.FillTransparency = 0.5
+		highlight.Adornee = personagem
+		highlight.Parent = personagem
 	end
 end
 
--- CLIQUE DO BOTÃO
-Button.MouseButton1Click:Connect(function()
-	Ativado = not Ativado
-	AtualizarInterface()
-end)
-
--- FUNÇÃO PARA MARCAR INIMIGO (HIGHLIGHT)
-local function AplicarHighlight(personagem)
-	if not personagem:FindFirstChild("VanguardHighlight") then
-		local h = Instance.new("Highlight")
-		h.Name = "VanguardHighlight"
-		h.FillColor = CorInimigo
-		h.OutlineColor = Color3.fromRGB(255, 255, 255)
-		h.FillTransparency = 0.4
-		h.Parent = personagem
+-- Função para remover a marcação vermelha
+local function RemoverDestaque(personagem)
+	if personagem then
+		local highlight = personagem:FindFirstChild("MarcacaoInimigo")
+		if highlight then
+			highlight:Destroy()
+		end
 	end
 end
 
-local function RemoverHighlight(personagem)
-	local h = personagem:FindFirstChild("VanguardHighlight")
-	if h then h:Destroy() end
+-- Limpa os efeitos visuais de todos os jogadores ativos
+local function LimparTodosOsDestaques()
+	for _, p in pairs(Players:GetPlayers()) do
+		if p.Character then
+			RemoverDestaque(p.Character)
+		end
+	end
 end
 
--- ENCONTRAR INIMIGO MAIS PRÓXIMO DO CENTRO (CHECK DE TIME)
-local function ObterMelhorAlvo()
+-- --- LÓGICA DE SELEÇÃO E MIRA ---
+
+-- Função para encontrar o personagem mais próximo do centro da tela
+local function ObterAlvoMaisProximo()
 	local melhorAlvo = nil
 	local menorDistancia = RaioFOV
 	local centroTela = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
 
 	for _, p in pairs(Players:GetPlayers()) do
-		-- Verifica se NÃO é do mesmo time e se o personagem existe
-		if p ~= LocalPlayer and p.Team ~= LocalPlayer.Team and p.Character then
+		if p ~= LocalPlayer and p.Character then
 			local head = p.Character:FindFirstChild("Head")
-			local hum = p.Character:FindFirstChild("Humanoid")
+			local humanoid = p.Character:FindFirstChild("Humanoid")
 			
-			if head and hum and hum.Health > 0 then
-				local posTela, visivel = Camera:WorldToViewportPoint(head.Position)
+			if head and humanoid and humanoid.Health > 0 then
+				local posTela, naTela = Camera:WorldToViewportPoint(head.Position)
 				
-				if visivel then
-					local dist = (Vector2.new(posTela.X, posTela.Y) - centroTela).Magnitude
-					if dist < menorDistancia then
-						menorDistancia = dist
-						melhorAlvo = p.Character
+				if naTela then
+					local distancia = (Vector2.new(posTela.X, posTela.Y) - centroTela).Magnitude
+					if distancia < menorDistancia then
+						menorDistancia = distancia
+						melhorAlvo = head
 					end
 				end
 				
-				-- Aplica o efeito vermelho visual
-				AplicarHighlight(p.Character)
+				-- Mantém o personagem destacado enquanto o sistema procura alvos
+				AplicarDestaque(p.Character)
 			end
-		elseif p.Character and p.Team == LocalPlayer.Team then
-			-- Se for do mesmo time, garante que não tem highlight
-			RemoverHighlight(p.Character)
 		end
 	end
 	return melhorAlvo
 end
 
--- LOOP DE MIRA
-RunService.RenderStepped:Connect(function()
+-- Função executada a cada quadro (Frame) para atualizar a câmera
+local function ExecutarFocoMira()
+	local alvo = ObterAlvoMaisProximo()
+	if alvo then
+		-- Calcula a rotação necessária para olhar para a cabeça do alvo
+		local novaRotacao = CFrame.lookAt(Camera.CFrame.Position, alvo.Position)
+		-- Suaviza a transição usando Lerp
+		Camera.CFrame = Camera.CFrame:Lerp(novaRotacao, Suavidade)
+	end
+end
+
+-- --- INTERAÇÃO DO BOTÃO ---
+
+ToggleButton.MouseButton1Click:Connect(function()
+	Ativado = not Ativado
+	
 	if Ativado then
-		AlvoAtual = ObterMelhorAlvo()
+		ToggleButton.Text = "STATUS: ATIVADO"
+		ToggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50) -- Fundo Vermelho
 		
-		if AlvoAtual and AlvoAtual:FindFirstChild("Head") then
-			-- Puxa a câmera suavemente para a cabeça (Head)
-			local headPos = AlvoAtual.Head.Position
-			local camCFrame = CFrame.new(Camera.CFrame.Position, headPos)
-			
-			Camera.CFrame = Camera.CFrame:Lerp(camCFrame, Suavidade)
-		end
+		-- Inicia o monitoramento de quadros
+		ConexaoRender = RunService.RenderStepped:Connect(ExecutarFocoMira)
 	else
-		-- Se desligar, limpa os highlights de todo mundo
-		for _, p in pairs(Players:GetPlayers()) do
-			if p.Character then RemoverHighlight(p.Character) end
+		ToggleButton.Text = "STATUS: DESATIVADO"
+		ToggleButton.BackgroundColor3 = Color3.fromRGB(50, 50, 55)   -- Fundo Padrão
+		
+		-- Desconecta o monitoramento para liberar processamento
+		if ConexaoRender then
+			ConexaoRender:Disconnect()
+			ConexaoRender = nil
 		end
+		
+		LimparTodosOsDestaques()
 	end
 end)
-
-AtualizarInterface() -- Inicializa a GUI
